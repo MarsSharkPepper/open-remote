@@ -72,62 +72,61 @@ if (-not (Test-Path $claudeSettingsFile)) {
     Copy-Item $claudeSettingsFile "$claudeSettingsFile.bak" -Force
     Write-Host "  Backup: $claudeSettingsFile.bak" -ForegroundColor Gray
 
-    $settings = @{}
-    try {
-        $raw = Get-Content $claudeSettingsFile -Raw
-        $settings = $raw | ConvertFrom-Json -AsHashtable
-    } catch {
-        Write-Host "  Warning: could not parse settings.json" -ForegroundColor Yellow
-    }
-
-    $hookCmd = "node `"$hookPath`""
-    $totalRemoved = 0
-
-    if ($settings.ContainsKey("hooks")) {
-        $eventsToRemove = @()
-
-        foreach ($event in @($settings["hooks"].Keys)) {
-            $entries = @($settings["hooks"][$event])
-            $before = $entries.Count
-
-            $filtered = $entries | Where-Object {
-                $entry = $_
-                $hasHook = $false
-                if ($entry.hooks) {
-                    foreach ($h in $entry.hooks) {
-                        if ($h.command -eq $hookCmd) {
-                            $hasHook = $true
-                            break
-                        }
-                    }
-                }
-                -not $hasHook
-            }
-
-            $totalRemoved += $before - @($filtered).Count
-
-            if (@($filtered).Count -eq 0) {
-                $eventsToRemove += $event
-            } else {
-                $settings["hooks"][$event] = @($filtered)
-            }
-        }
-
-        foreach ($event in $eventsToRemove) {
-            $settings["hooks"].Remove($event)
-        }
-
-        if ($settings["hooks"].Count -eq 0) {
-            $settings.Remove("hooks")
-        }
-    }
-
-    if ($totalRemoved -gt 0) {
-        $jsonContent = $settings | ConvertTo-Json -Depth 10
-        [System.IO.File]::WriteAllText($claudeSettingsFile, $jsonContent, (New-Object System.Text.UTF8Encoding $false))
-        Write-Host "  Removed $totalRemoved hook(s) from $claudeSettingsFile" -ForegroundColor Green
+    # Use temp script file to avoid PowerShell quoting issues (same as setup.ps1)
+    if (-not $hookPath) {
+        # hookPath not resolved — uninstall may be run from a different location.
+        # Attempt to find it from PATH or skip hook removal.
+        Write-Host "  hook script not found — skipping hook removal" -ForegroundColor Yellow
     } else {
-        Write-Host "  No OpenRemote hooks found in settings" -ForegroundColor Gray
+        $hookCmd = "node `"$hookPath`""
+        $tempScript = [System.IO.Path]::GetTempFileName()
+        $removeScript = @"
+const fs = require("fs");
+const settingsFile = process.argv[1];
+const hookCmd = process.argv[2];
+
+let settings = {};
+try { settings = JSON.parse(fs.readFileSync(settingsFile, "utf8")); } catch { process.exit(0); }
+if (!settings.hooks) { process.exit(0); }
+
+let removed = 0;
+for (const event of Object.keys(settings.hooks)) {
+  const before = settings.hooks[event].length;
+  settings.hooks[event] = settings.hooks[event].filter(
+    entry => !(entry.hooks && entry.hooks.some(h => h.command === hookCmd))
+  );
+  removed += before - settings.hooks[event].length;
+  if (settings.hooks[event].length === 0) {
+    delete settings.hooks[event];
+  }
+}
+
+if (removed > 0) {
+  if (Object.keys(settings.hooks).length === 0) {
+    delete settings.hooks;
+  }
+  fs.writeFileSync(settingsFile, JSON.stringify(settings, null, 2) + "\n");
+  console.log("REMOVED:" + removed);
+} else {
+  console.log("NONE");
+}
+"@
+        Set-Content -Path $tempScript -Value $removeScript -Encoding UTF8
+        $result = node $tempScript "$claudeSettingsFile" "$hookCmd"
+        Remove-Item $tempScript -Force
+
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "  ERROR: Failed to remove hooks" -ForegroundColor Red
+            if (Test-Path "$claudeSettingsFile.bak") {
+                Copy-Item "$claudeSettingsFile.bak" $claudeSettingsFile -Force
+                Write-Host "  Restored from backup" -ForegroundColor Yellow
+            }
+        } elseif ($result -match "^REMOVED:(\d+)$") {
+            $count = $Matches[1]
+            Write-Host "  Removed $count hook(s) from $claudeSettingsFile" -ForegroundColor Green
+        } else {
+            Write-Host "  No OpenRemote hooks found in settings" -ForegroundColor Gray
+        }
     }
 }
 

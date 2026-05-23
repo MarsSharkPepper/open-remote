@@ -61,59 +61,27 @@ powershell -ExecutionPolicy Bypass -File setup.ps1
 
 ### 配置 Token
 
-安装完成后，需要配置认证 token（从 OpenRemote 小程序获取）：
-
-**方式一：环境变量（永久生效）**
-
-<details>
-<summary>macOS / Linux（Bash / Zsh）</summary>
+安装完成后，需要配置认证 token（从 OpenRemote 小程序获取），以下命令永久生效，设置后需重新打开终端：
 
 ```bash
-# Bash 用户
-echo 'export OPENREMOTE_TOKEN=ort_xxxxx' >> ~/.bashrc
-source ~/.bashrc
+# macOS / Linux（Bash）
+echo 'export OPENREMOTE_TOKEN=ort_xxxxx' >> ~/.bashrc && source ~/.bashrc
 
-# Zsh 用户
-echo 'export OPENREMOTE_TOKEN=ort_xxxxx' >> ~/.zshrc
-source ~/.zshrc
+# macOS / Linux（Zsh）
+echo 'export OPENREMOTE_TOKEN=ort_xxxxx' >> ~/.zshrc && source ~/.zshrc
 ```
-</details>
-
-<details>
-<summary>Windows CMD（命令提示符）</summary>
-
-```cmd
-setx OPENREMOTE_TOKEN "ort_xxxxx"
-```
-设置后需重新打开终端生效。
-</details>
-
-<details>
-<summary>Windows PowerShell</summary>
 
 ```powershell
+# Windows PowerShell
 [Environment]::SetEnvironmentVariable("OPENREMOTE_TOKEN", "ort_xxxxx", "User")
 ```
-设置后需重新打开终端生效。
-</details>
 
-> **提示：** 如果只需要临时生效（当前终端会话），macOS/Linux 使用 `export OPENREMOTE_TOKEN=ort_xxxxx`，Windows CMD 使用 `set OPENREMOTE_TOKEN=ort_xxxxx`，Windows PowerShell 使用 `$env:OPENREMOTE_TOKEN = 'ort_xxxxx'`。
-
-**方式二：配置文件**
-
-```bash
-# macOS / Linux
-mkdir -p ~/.openremote
-echo '{"token":"ort_xxxxx"}' > ~/.openremote/credentials.json
-
-# Windows PowerShell
-New-Item -ItemType Directory -Force -Path "$env:USERPROFILE\.openremote" | Out-Null
-Set-Content -Path "$env:USERPROFILE\.openremote\credentials.json" -Value '{"token":"ort_xxxxx"}' -Encoding UTF8
-
+```cmd
 # Windows CMD
-mkdir "%USERPROFILE%\.openremote"
-echo {"token":"ort_xxxxx"}> "%USERPROFILE%\.openremote\credentials.json"
+setx OPENREMOTE_TOKEN "ort_xxxxx"
 ```
+
+> **注意：** Windows 下通过 `setx` 或 `[Environment]::SetEnvironmentVariable` 设置的环境变量需要**重新打开终端**才能生效。
 
 ## 使用
 

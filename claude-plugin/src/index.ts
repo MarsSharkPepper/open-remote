@@ -132,6 +132,11 @@ const TOKEN = creds.token
 let ptyProc: IPty | null = null
 let ws: WebSocket | null = null
 let registered = false
+let reconnectAttempts = 0
+let registerFailCount = 0
+const MAX_RECONNECT_ATTEMPTS = 3
+const MAX_REGISTER_FAIL = 3
+let shouldReconnect = true
 const messageCache: CachedMessage[] = []
 let msgCounter = 0
 let sessionId = generateSessionId()
@@ -2307,15 +2312,18 @@ function handlePostToolUse(data: Record<string, any>) {
 
 function connectWs() {
   if (ws && ws.readyState <= 1) return
+  if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) return
 
   try {
     ws = new WebSocket(SERVER_URL)
   } catch {
+    reconnectAttempts++
     setTimeout(connectWs, RECONNECT_MS)
     return
   }
 
   ws.on("open", () => {
+    reconnectAttempts = 0
     if (sessionInitialized) {
       doRegister()
     } else {
@@ -2341,7 +2349,11 @@ function connectWs() {
   ws.on("close", () => {
     ws = null
     registered = false
-    setTimeout(connectWs, RECONNECT_MS)
+    if (!shouldReconnect) return
+    reconnectAttempts++
+    if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+      setTimeout(connectWs, RECONNECT_MS)
+    }
   })
 
   ws.on("error", () => {})
@@ -2384,6 +2396,7 @@ function handleMessage(msg: Record<string, any>) {
   if (msg.type === "register_result") {
     if (msg.success) {
       registered = true
+      registerFailCount = 0
       send({ type: "update_session", opencodeSessionId: sessionId })
       send({
         type: "opencode_event",
@@ -2396,6 +2409,13 @@ function handleMessage(msg: Record<string, any>) {
         },
       })
     } else {
+      registerFailCount++
+      log(`Registration failed (${registerFailCount}/${MAX_REGISTER_FAIL}): ${msg.error || "unknown"}`)
+      if (registerFailCount >= MAX_REGISTER_FAIL) {
+        log("Max registration failures reached, stopping reconnect")
+        shouldReconnect = false
+        ws?.close()
+      }
     }
     return
   }
